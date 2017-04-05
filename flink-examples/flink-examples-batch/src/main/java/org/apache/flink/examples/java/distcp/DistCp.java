@@ -47,6 +47,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
+ * distcp（分布式拷贝）是用于大规模集群内部和集群之间拷贝的工具。 它使用Map/Reduce实现文件分发，错误处理和恢复，以及报告生成。
+ * 它把文件和目录的列表作为map任务的输入，每个任务会完成源列表中部分文件的拷贝。
+ * 由于使用了Map/Reduce方法，这个工具在语义和执行上都会有特殊的地方。
  * A main class of the Flink distcp utility.
  * It's a simple reimplementation of Hadoop distcp
  * (see <a href="http://hadoop.apache.org/docs/r1.2.1/distcp.html">http://hadoop.apache.org/docs/r1.2.1/distcp.html</a>)
@@ -57,133 +60,131 @@ import java.util.Map;
  * However, in a distributed environment HDFS paths must be provided both as input and output.
  */
 public class DistCp {
-	
-	private static final Logger LOGGER = LoggerFactory.getLogger(DistCp.class);
-	public static final String BYTES_COPIED_CNT_NAME = "BYTES_COPIED";
-	public static final String FILES_COPIED_CNT_NAME = "FILES_COPIED";
 
-	public static void main(String[] args) throws Exception {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DistCp.class);
+    public static final String BYTES_COPIED_CNT_NAME = "BYTES_COPIED";
+    public static final String FILES_COPIED_CNT_NAME = "FILES_COPIED";
 
-		// set up the execution environment
-		final ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
+    public static void main(String[] args) throws Exception {
 
-		ParameterTool params = ParameterTool.fromArgs(args);
-		if (!params.has("input") || !params.has("output")) {
-			System.err.println("Usage: --input <path> --output <path> [--parallelism <n>]");
-			return;
-		}
+        // set up the execution environment
+        final ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 
-		final Path sourcePath = new Path(params.get("input"));
-		final Path targetPath = new Path(params.get("output"));
-		if (!isLocal(env) && !(isOnDistributedFS(sourcePath) && isOnDistributedFS(targetPath))) {
-			System.out.println("In a distributed mode only HDFS input/output paths are supported");
-			return;
-		}
+        ParameterTool params = ParameterTool.fromArgs(args);
+        if (!params.has("input") || !params.has("output")) {
+            System.err.println("Usage: --input <path> --output <path> [--parallelism <n>]");
+            return;
+        }
 
-		final int parallelism = params.getInt("parallelism", 10);
-		if (parallelism <= 0) {
-			System.err.println("Parallelism should be greater than 0");
-			return;
-		}
+        final Path sourcePath = new Path(params.get("input"));
+        final Path targetPath = new Path(params.get("output"));
+        if (!isLocal(env) && !(isOnDistributedFS(sourcePath) && isOnDistributedFS(targetPath))) {
+            System.out.println("In a distributed mode only HDFS input/output paths are supported");
+            return;
+        }
 
-		// make parameters available in the web interface
-		env.getConfig().setGlobalJobParameters(params);
+        final int parallelism = params.getInt("parallelism", 10);
+        if (parallelism <= 0) {
+            System.err.println("Parallelism should be greater than 0");
+            return;
+        }
 
-		env.setParallelism(parallelism);
+        // make parameters available in the web interface
+        env.getConfig().setGlobalJobParameters(params);
 
-		long startTime = System.currentTimeMillis();
-		LOGGER.info("Initializing copy tasks");
-		List<FileCopyTask> tasks = getCopyTasks(sourcePath);
-		LOGGER.info("Copy task initialization took " + (System.currentTimeMillis() - startTime) + "ms");
+        env.setParallelism(parallelism);
 
-		DataSet<FileCopyTask> inputTasks = new DataSource<>(env,
-				new FileCopyTaskInputFormat(tasks),
-				new GenericTypeInfo<>(FileCopyTask.class), "fileCopyTasks");
+        long startTime = System.currentTimeMillis();
+        LOGGER.info("Initializing copy tasks");
+        List<FileCopyTask> tasks = getCopyTasks(sourcePath);
+        LOGGER.info("Copy task initialization took " + (System.currentTimeMillis() - startTime) + "ms");
+
+        DataSet<FileCopyTask> inputTasks = new DataSource<>(env, new FileCopyTaskInputFormat(tasks), new GenericTypeInfo<>(FileCopyTask.class), "fileCopyTasks");
 
 
-		FlatMapOperator<FileCopyTask, Object> res = inputTasks.flatMap(new RichFlatMapFunction<FileCopyTask, Object>() {
+        FlatMapOperator<FileCopyTask, Object> res = inputTasks.flatMap(new RichFlatMapFunction<FileCopyTask, Object>() {
 
-			private static final long serialVersionUID = 1109254230243989929L;
-			private LongCounter fileCounter;
-			private LongCounter bytesCounter;
+            private static final long serialVersionUID = 1109254230243989929L;
+            private LongCounter fileCounter;
+            private LongCounter bytesCounter;
 
-			@Override
-			public void open(Configuration parameters) throws Exception {
-				bytesCounter = getRuntimeContext().getLongCounter(BYTES_COPIED_CNT_NAME);
-				fileCounter = getRuntimeContext().getLongCounter(FILES_COPIED_CNT_NAME);
-			}
+            @Override
+            public void open(Configuration parameters) throws Exception {
+                bytesCounter = getRuntimeContext().getLongCounter(BYTES_COPIED_CNT_NAME);
+                fileCounter = getRuntimeContext().getLongCounter(FILES_COPIED_CNT_NAME);
+            }
 
-			@Override
-			public void flatMap(FileCopyTask task, Collector<Object> out) throws Exception {
-				LOGGER.info("Processing task: " + task);
-				Path outPath = new Path(targetPath, task.getRelativePath());
+            @Override
+            public void flatMap(FileCopyTask task, Collector<Object> out) throws Exception {
+                LOGGER.info("Processing task: " + task);
+                Path outPath = new Path(targetPath, task.getRelativePath());
 
-				FileSystem targetFs = targetPath.getFileSystem();
-				// creating parent folders in case of a local FS
-				if (!targetFs.isDistributedFS()) {
-					//dealing with cases like file:///tmp or just /tmp
-					File outFile = outPath.toUri().isAbsolute() ? new File(outPath.toUri()) : new File(outPath.toString());
-					File parentFile = outFile.getParentFile();
-					if (!parentFile.mkdirs() && !parentFile.exists()) {
-						throw new RuntimeException("Cannot create local file system directories: " + parentFile);
-					}
-				}
-				FSDataOutputStream outputStream = null;
-				FSDataInputStream inputStream = null;
-				try {
-					outputStream = targetFs.create(outPath, true);
-					inputStream = task.getPath().getFileSystem().open(task.getPath());
-					int bytes = IOUtils.copy(inputStream, outputStream);
-					bytesCounter.add(bytes);
-				} finally {
-					IOUtils.closeQuietly(inputStream);
-					IOUtils.closeQuietly(outputStream);
-				}
-				fileCounter.add(1l);
-			}
-		});
+                FileSystem targetFs = targetPath.getFileSystem();
+                // creating parent folders in case of a local FS
+                if (!targetFs.isDistributedFS()) {
+                    //dealing with cases like file:///tmp or just /tmp
+                    File outFile = outPath.toUri().isAbsolute() ? new File(outPath.toUri()) : new File(outPath.toString());
+                    File parentFile = outFile.getParentFile();
+                    if (!parentFile.mkdirs() && !parentFile.exists()) {
+                        throw new RuntimeException("Cannot create local file system directories: " + parentFile);
+                    }
+                }
+                FSDataOutputStream outputStream = null;
+                FSDataInputStream inputStream = null;
+                try {
+                    outputStream = targetFs.create(outPath, true);
+                    inputStream = task.getPath().getFileSystem().open(task.getPath());
+                    int bytes = IOUtils.copy(inputStream, outputStream);
+                    bytesCounter.add(bytes);
+                } finally {
+                    IOUtils.closeQuietly(inputStream);
+                    IOUtils.closeQuietly(outputStream);
+                }
+                fileCounter.add(1l);
+            }
+        });
 
-		// no data sinks are needed, therefore just printing an empty result
-		res.print();
+        // no data sinks are needed, therefore just printing an empty result
+        res.print();
 
-		Map<String, Object> accumulators = env.getLastJobExecutionResult().getAllAccumulatorResults();
-		LOGGER.info("== COUNTERS ==");
-		for (Map.Entry<String, Object> e : accumulators.entrySet()) {
-			LOGGER.info(e.getKey() + ": " + e.getValue());
-		}
-	}
+        Map<String, Object> accumulators = env.getLastJobExecutionResult().getAllAccumulatorResults();
+        LOGGER.info("== COUNTERS ==");
+        for (Map.Entry<String, Object> e : accumulators.entrySet()) {
+            LOGGER.info(e.getKey() + ": " + e.getValue());
+        }
+    }
 
 
-	// -----------------------------------------------------------------------------------------
-	// HELPER METHODS
-	// -----------------------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------------------
+    // HELPER METHODS
+    // -----------------------------------------------------------------------------------------
 
-	private static boolean isLocal(final ExecutionEnvironment env) {
-		return env instanceof LocalEnvironment;
-	}
+    private static boolean isLocal(final ExecutionEnvironment env) {
+        return env instanceof LocalEnvironment;
+    }
 
-	private static boolean isOnDistributedFS(final Path path) throws IOException {
-		return path.getFileSystem().isDistributedFS();
-	}
+    private static boolean isOnDistributedFS(final Path path) throws IOException {
+        return path.getFileSystem().isDistributedFS();
+    }
 
-	private static List<FileCopyTask> getCopyTasks(Path sourcePath) throws IOException {
-		List<FileCopyTask> tasks = new ArrayList<>();
-		getCopyTasks(sourcePath, "", tasks);
-		return tasks;
-	}
+    private static List<FileCopyTask> getCopyTasks(Path sourcePath) throws IOException {
+        List<FileCopyTask> tasks = new ArrayList<>();
+        getCopyTasks(sourcePath, "", tasks);
+        return tasks;
+    }
 
-	private static void getCopyTasks(Path p, String rel, List<FileCopyTask> tasks) throws IOException {
-		FileStatus[] res = p.getFileSystem().listStatus(p);
-		if (res == null) {
-			return;
-		}
-		for (FileStatus fs : res) {
-			if (fs.isDir()) {
-				getCopyTasks(fs.getPath(), rel + fs.getPath().getName() + "/", tasks);
-			} else {
-				Path cp = fs.getPath();
-				tasks.add(new FileCopyTask(cp, rel + cp.getName()));
-			}
-		}
-	}
+    private static void getCopyTasks(Path p, String rel, List<FileCopyTask> tasks) throws IOException {
+        FileStatus[] res = p.getFileSystem().listStatus(p);
+        if (res == null) {
+            return;
+        }
+        for (FileStatus fs : res) {
+            if (fs.isDir()) {
+                getCopyTasks(fs.getPath(), rel + fs.getPath().getName() + "/", tasks);
+            } else {
+                Path cp = fs.getPath();
+                tasks.add(new FileCopyTask(cp, rel + cp.getName()));
+            }
+        }
+    }
 }

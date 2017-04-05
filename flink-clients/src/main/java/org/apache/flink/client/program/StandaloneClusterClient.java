@@ -38,71 +38,69 @@ import java.util.List;
  */
 public class StandaloneClusterClient extends ClusterClient {
 
-	public StandaloneClusterClient(Configuration config) throws IOException {
-		super(config);
-	}
+    public StandaloneClusterClient(Configuration config) throws IOException {
+        super(config);
+    }
 
-	@Override
-	public void waitForClusterToBeReady() {}
+    @Override
+    public void waitForClusterToBeReady() {}
 
 
-	@Override
-	public String getWebInterfaceURL() {
-		String host = this.getJobManagerAddress().getHostString();
-		int port = getFlinkConfiguration().getInteger(ConfigConstants.JOB_MANAGER_WEB_PORT_KEY,
-			ConfigConstants.DEFAULT_JOB_MANAGER_WEB_FRONTEND_PORT);
-		return "http://" +  host + ":" + port;
-	}
+    @Override
+    public String getWebInterfaceURL() {
+        String host = this.getJobManagerAddress().getHostString();
+        int port = getFlinkConfiguration().getInteger(ConfigConstants.JOB_MANAGER_WEB_PORT_KEY, ConfigConstants.DEFAULT_JOB_MANAGER_WEB_FRONTEND_PORT);
+        return "http://" + host + ":" + port;
+    }
 
-	@Override
-	public GetClusterStatusResponse getClusterStatus() {
-		ActorGateway jmGateway;
-		try {
-			jmGateway = getJobManagerGateway();
-			Future<Object> future = jmGateway.ask(GetClusterStatus.getInstance(), timeout);
-			Object result = Await.result(future, timeout);
-			if (result instanceof GetClusterStatusResponse) {
-				return (GetClusterStatusResponse) result;
-			} else {
-				throw new RuntimeException("Received the wrong reply " + result + " from cluster.");
-			}
-		} catch (Exception e) {
-			throw new RuntimeException("Couldn't retrieve the Cluster status.", e);
-		}
-	}
+    @Override
+    public GetClusterStatusResponse getClusterStatus() {
+        ActorGateway jmGateway;
+        try {
+            jmGateway = getJobManagerGateway();
+            Future<Object> future = jmGateway.ask(GetClusterStatus.getInstance(), timeout);
+            Object result = Await.result(future, timeout);
+            if (result instanceof GetClusterStatusResponse) {
+                return (GetClusterStatusResponse) result;
+            } else {
+                throw new RuntimeException("Received the wrong reply " + result + " from cluster.");
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Couldn't retrieve the Cluster status.", e);
+        }
+    }
 
-	@Override
-	public List<String> getNewMessages() {
-		return Collections.emptyList();
-	}
+    @Override
+    public List<String> getNewMessages() {
+        return Collections.emptyList();
+    }
 
-	@Override
-	public String getClusterIdentifier() {
-		// Avoid blocking here by getting the address from the config without resolving the address
-		return "Standalone cluster with JobManager at " + this.getJobManagerAddress();
-	}
+    @Override
+    public String getClusterIdentifier() {
+        // Avoid blocking here by getting the address from the config without resolving the address
+        return "Standalone cluster with JobManager at " + this.getJobManagerAddress();
+    }
 
-	@Override
-	public int getMaxSlots() {
-		return -1;
-	}
+    @Override
+    public int getMaxSlots() {
+        return -1;
+    }
 
-	@Override
-	public boolean hasUserJarsInClassPath(List<URL> userJarFiles) {
-		return false;
-	}
+    @Override
+    public boolean hasUserJarsInClassPath(List<URL> userJarFiles) {
+        return false;
+    }
 
-	@Override
-	protected JobSubmissionResult submitJob(JobGraph jobGraph, ClassLoader classLoader)
-			throws ProgramInvocationException {
-		if (isDetached()) {
-			return super.runDetached(jobGraph, classLoader);
-		} else {
-			return super.run(jobGraph, classLoader);
-		}
-	}
+    @Override
+    protected JobSubmissionResult submitJob(JobGraph jobGraph, ClassLoader classLoader) throws ProgramInvocationException {
+        if (isDetached()) {
+            return super.runDetached(jobGraph, classLoader);
+        } else {
+            return super.run(jobGraph, classLoader);
+        }
+    }
 
-	@Override
-	protected void finalizeCluster() {}
+    @Override
+    protected void finalizeCluster() {}
 
 }

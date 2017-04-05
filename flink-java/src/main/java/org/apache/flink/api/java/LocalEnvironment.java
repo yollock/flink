@@ -31,191 +31,187 @@ import org.apache.flink.configuration.Configuration;
 /**
  * An {@link ExecutionEnvironment} that runs the program locally, multi-threaded, in the JVM where the
  * environment is instantiated.
- * 
+ * <p>
  * <p>When this environment is instantiated, it uses a default parallelism of {@code 1}. The default
  * parallelism can be set via {@link #setParallelism(int)}.
- * 
+ * <p>
  * <p>Local environments can also be instantiated through {@link ExecutionEnvironment#createLocalEnvironment()}
  * and {@link ExecutionEnvironment#createLocalEnvironment(int)}. The former version will pick a
  * default parallelism equal to the number of hardware contexts in the local machine.
  */
 @Public
 public class LocalEnvironment extends ExecutionEnvironment {
-	
-	/** The user-defined configuration for the local execution */
-	private final Configuration configuration;
 
-	/** Create lazily upon first use */
-	private PlanExecutor executor;
+    /** The user-defined configuration for the local execution */
+    private final Configuration configuration;
 
-	/** In case we keep the executor alive for sessions, this reaper shuts it down eventually.
-	 * The reaper's finalize method triggers the executor shutdown. */
-	@SuppressWarnings("all")
-	private ExecutorReaper executorReaper;
-	
-	/**
-	 * Creates a new local environment.
-	 */
-	public LocalEnvironment() {
-		this(new Configuration());
-	}
+    /** Create lazily upon first use */
+    private PlanExecutor executor;
 
-	/**
-	 * Creates a new local environment that configures its local executor with the given configuration.
-	 * 
-	 * @param config The configuration used to configure the local executor.
-	 */
-	public LocalEnvironment(Configuration config) {
-		if (!ExecutionEnvironment.areExplicitEnvironmentsAllowed()) {
-			throw new InvalidProgramException(
-					"The LocalEnvironment cannot be instantiated when running in a pre-defined context " +
-							"(such as Command Line Client, Scala Shell, or TestEnvironment)");
-		}
-		this.configuration = config == null ? new Configuration() : config;
-	}
-	
-	// --------------------------------------------------------------------------------------------
-	
-	@Override
-	public JobExecutionResult execute(String jobName) throws Exception {
-		if (executor == null) {
-			startNewSession();
-		}
+    /**
+     * In case we keep the executor alive for sessions, this reaper shuts it down eventually.
+     * The reaper's finalize method triggers the executor shutdown.
+     */
+    @SuppressWarnings("all")
+    private ExecutorReaper executorReaper;
 
-		Plan p = createProgramPlan(jobName);
+    /**
+     * Creates a new local environment.
+     */
+    public LocalEnvironment() {
+        this(new Configuration());
+    }
 
-		// Session management is disabled, revert this commit to enable
-		//p.setJobId(jobID);
-		//p.setSessionTimeout(sessionTimeout);
+    /**
+     * Creates a new local environment that configures its local executor with the given configuration.
+     *
+     * @param config The configuration used to configure the local executor.
+     */
+    public LocalEnvironment(Configuration config) {
+        if (!ExecutionEnvironment.areExplicitEnvironmentsAllowed()) {
+            throw new InvalidProgramException("The LocalEnvironment cannot be instantiated when running in a pre-defined context " + "(such as Command Line Client, Scala Shell, or TestEnvironment)");
+        }
+        this.configuration = config == null ? new Configuration() : config;
+    }
 
-		JobExecutionResult result = executor.executePlan(p);
+    // --------------------------------------------------------------------------------------------
 
-		this.lastJobExecutionResult = result;
-		return result;
-	}
-	
-	@Override
-	public String getExecutionPlan() throws Exception {
-		Plan p = createProgramPlan(null, false);
-		
-		// make sure that we do not start an executor in any case here.
-		// if one runs, fine, of not, we only create the class but disregard immediately afterwards
-		if (executor != null) {
-			return executor.getOptimizerPlanAsJSON(p);
-		}
-		else {
-			PlanExecutor tempExecutor = PlanExecutor.createLocalExecutor(configuration);
-			return tempExecutor.getOptimizerPlanAsJSON(p);
-		}
-	}
+    @Override
+    public JobExecutionResult execute(String jobName) throws Exception {
+        if (executor == null) {
+            startNewSession();
+        }
 
-	@Override
-	@PublicEvolving
-	public void startNewSession() throws Exception {
-		if (executor != null) {
-			// we need to end the previous session
-			executor.stop();
-			// create also a new JobID
-			jobID = JobID.generate();
-		}
-		
-		// create a new local executor
-		executor = PlanExecutor.createLocalExecutor(configuration);
-		executor.setPrintStatusDuringExecution(getConfig().isSysoutLoggingEnabled());
-		
-		// if we have a session, start the mini cluster eagerly to have it available across sessions
-		if (getSessionTimeout() > 0) {
-			executor.start();
-			
-			// also install the reaper that will shut it down eventually
-			executorReaper = new ExecutorReaper(executor);
-		}
-	}
+        Plan p = createProgramPlan(jobName);
 
-	// ------------------------------------------------------------------------
-	//  Utilities
-	// ------------------------------------------------------------------------
-	
-	@Override
-	public String toString() {
-		return "Local Environment (parallelism = " + (getParallelism() == ExecutionConfig.PARALLELISM_DEFAULT ? "default" : getParallelism())
-				+ ") : " + getIdString();
-	}
+        // Session management is disabled, revert this commit to enable
+        //p.setJobId(jobID);
+        //p.setSessionTimeout(sessionTimeout);
 
-	// ------------------------------------------------------------------------
-	//  Reaping the local executor when in session mode
-	// ------------------------------------------------------------------------
+        JobExecutionResult result = executor.executePlan(p);
 
-	/**
-	 * This thread shuts down the local executor.
-	 *
-	 * <p><b>IMPORTANT:</b> This must be a static inner class to hold no reference to the outer class.
-	 * Otherwise, the outer class could never become garbage collectible while this thread runs.</p>
-	 */
-	private static class ShutdownThread extends Thread {
+        this.lastJobExecutionResult = result;
+        return result;
+    }
 
-		private final Object monitor = new Object();
+    @Override
+    public String getExecutionPlan() throws Exception {
+        Plan p = createProgramPlan(null, false);
 
-		private final PlanExecutor executor;
+        // make sure that we do not start an executor in any case here.
+        // if one runs, fine, of not, we only create the class but disregard immediately afterwards
+        if (executor != null) {
+            return executor.getOptimizerPlanAsJSON(p);
+        } else {
+            PlanExecutor tempExecutor = PlanExecutor.createLocalExecutor(configuration);
+            return tempExecutor.getOptimizerPlanAsJSON(p);
+        }
+    }
 
-		private volatile boolean triggered = false;
+    @Override
+    @PublicEvolving
+    public void startNewSession() throws Exception {
+        if (executor != null) {
+            // we need to end the previous session
+            executor.stop();
+            // create also a new JobID
+            jobID = JobID.generate();
+        }
 
-		ShutdownThread(PlanExecutor executor) {
-			super("Local cluster reaper");
-			setDaemon(true);
-			setPriority(Thread.MIN_PRIORITY);
+        // create a new local executor
+        executor = PlanExecutor.createLocalExecutor(configuration);
+        executor.setPrintStatusDuringExecution(getConfig().isSysoutLoggingEnabled());
 
-			this.executor = executor;
-		}
+        // if we have a session, start the mini cluster eagerly to have it available across sessions
+        if (getSessionTimeout() > 0) {
+            executor.start();
 
-		@Override
-		public void run() {
-			synchronized (monitor) {
-				while (!triggered) {
-					try {
-						monitor.wait();
-					}
-					catch (InterruptedException e) {
-						// should never happen
-					}
-				}
-			}
+            // also install the reaper that will shut it down eventually
+            executorReaper = new ExecutorReaper(executor);
+        }
+    }
 
-			try {
-				executor.stop();
-			}
-			catch (Throwable t) {
-				System.err.println("Cluster reaper caught exception during shutdown");
-				t.printStackTrace();
-			}
-		}
+    // ------------------------------------------------------------------------
+    //  Utilities
+    // ------------------------------------------------------------------------
 
-		void trigger() {
-			triggered = true;
-			synchronized (monitor) {
-				monitor.notifyAll();
-			}
-		}
+    @Override
+    public String toString() {
+        return "Local Environment (parallelism = " + (getParallelism() == ExecutionConfig.PARALLELISM_DEFAULT ? "default" : getParallelism()) + ") : " + getIdString();
+    }
 
-	}
+    // ------------------------------------------------------------------------
+    //  Reaping the local executor when in session mode
+    // ------------------------------------------------------------------------
 
-	/**
-	 * A class that, upon finalization, shuts down the local mini cluster by triggering the reaper
-	 * thread.
-	 */
-	private static class ExecutorReaper {
+    /**
+     * This thread shuts down the local executor.
+     * <p>
+     * <p><b>IMPORTANT:</b> This must be a static inner class to hold no reference to the outer class.
+     * Otherwise, the outer class could never become garbage collectible while this thread runs.</p>
+     */
+    private static class ShutdownThread extends Thread {
 
-		private final ShutdownThread shutdownThread;
+        private final Object monitor = new Object();
 
-		ExecutorReaper(PlanExecutor executor) {
-			this.shutdownThread = new ShutdownThread(executor);
-			this.shutdownThread.start();
-		}
+        private final PlanExecutor executor;
 
-		@Override
-		protected void finalize() throws Throwable {
-			super.finalize();
-			shutdownThread.trigger();
-		}
-	}
+        private volatile boolean triggered = false;
+
+        ShutdownThread(PlanExecutor executor) {
+            super("Local cluster reaper");
+            setDaemon(true);
+            setPriority(Thread.MIN_PRIORITY);
+
+            this.executor = executor;
+        }
+
+        @Override
+        public void run() {
+            synchronized (monitor) {
+                while (!triggered) {
+                    try {
+                        monitor.wait();
+                    } catch (InterruptedException e) {
+                        // should never happen
+                    }
+                }
+            }
+
+            try {
+                executor.stop();
+            } catch (Throwable t) {
+                System.err.println("Cluster reaper caught exception during shutdown");
+                t.printStackTrace();
+            }
+        }
+
+        void trigger() {
+            triggered = true;
+            synchronized (monitor) {
+                monitor.notifyAll();
+            }
+        }
+
+    }
+
+    /**
+     * A class that, upon finalization, shuts down the local mini cluster by triggering the reaper
+     * thread.
+     */
+    private static class ExecutorReaper {
+
+        private final ShutdownThread shutdownThread;
+
+        ExecutorReaper(PlanExecutor executor) {
+            this.shutdownThread = new ShutdownThread(executor);
+            this.shutdownThread.start();
+        }
+
+        @Override
+        protected void finalize() throws Throwable {
+            super.finalize();
+            shutdownThread.trigger();
+        }
+    }
 }

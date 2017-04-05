@@ -44,215 +44,190 @@ import org.slf4j.LoggerFactory;
 
 @Public
 public class RemoteStreamEnvironment extends StreamExecutionEnvironment {
-	
-	private static final Logger LOG = LoggerFactory.getLogger(RemoteStreamEnvironment.class);
 
-	/** The hostname of the JobManager */
-	private final String host;
+    private static final Logger LOG = LoggerFactory.getLogger(RemoteStreamEnvironment.class);
 
-	/** The port of the JobManager main actor system */
-	private final int port;
+    /** The hostname of the JobManager */
+    private final String host;
 
-	/** The configuration used to parametrize the client that connects to the remote cluster */
-	private final Configuration clientConfiguration;
+    /** The port of the JobManager main actor system */
+    private final int port;
 
-	/** The jar files that need to be attached to each job */
-	private final List<URL> jarFiles;
-	
-	/** The classpaths that need to be attached to each job */
-	private final List<URL> globalClasspaths;
+    /** The configuration used to parametrize the client that connects to the remote cluster */
+    private final Configuration clientConfiguration;
 
-	/**
-	 * Creates a new RemoteStreamEnvironment that points to the master
-	 * (JobManager) described by the given host name and port.
-	 * 
-	 * @param host
-	 *            The host name or address of the master (JobManager), where the
-	 *            program should be executed.
-	 * @param port
-	 *            The port of the master (JobManager), where the program should
-	 *            be executed.
-	 * @param jarFiles
-	 *            The JAR files with code that needs to be shipped to the
-	 *            cluster. If the program uses user-defined functions,
-	 *            user-defined input formats, or any libraries, those must be
-	 *            provided in the JAR files.
-	 */
-	public RemoteStreamEnvironment(String host, int port, String... jarFiles) {
-		this(host, port, null, jarFiles);
-	}
+    /** The jar files that need to be attached to each job */
+    private final List<URL> jarFiles;
 
-	/**
-	 * Creates a new RemoteStreamEnvironment that points to the master
-	 * (JobManager) described by the given host name and port.
-	 *
-	 * @param host
-	 *            The host name or address of the master (JobManager), where the
-	 *            program should be executed.
-	 * @param port
-	 *            The port of the master (JobManager), where the program should
-	 *            be executed.
-	 * @param clientConfiguration
-	 *            The configuration used to parametrize the client that connects to the
-	 *            remote cluster.
-	 * @param jarFiles
-	 *            The JAR files with code that needs to be shipped to the
-	 *            cluster. If the program uses user-defined functions,
-	 *            user-defined input formats, or any libraries, those must be
-	 *            provided in the JAR files.
-	 */
-	public RemoteStreamEnvironment(String host, int port, Configuration clientConfiguration, String... jarFiles) {
-		this(host, port, clientConfiguration, jarFiles, null);
-	}
+    /** The classpaths that need to be attached to each job */
+    private final List<URL> globalClasspaths;
 
-	/**
-	 * Creates a new RemoteStreamEnvironment that points to the master
-	 * (JobManager) described by the given host name and port.
-	 *
-	 * @param host
-	 *            The host name or address of the master (JobManager), where the
-	 *            program should be executed.
-	 * @param port
-	 *            The port of the master (JobManager), where the program should
-	 *            be executed.
-	 * @param clientConfiguration
-	 *            The configuration used to parametrize the client that connects to the
-	 *            remote cluster.
-	 * @param jarFiles
-	 *            The JAR files with code that needs to be shipped to the
-	 *            cluster. If the program uses user-defined functions,
-	 *            user-defined input formats, or any libraries, those must be
-	 *            provided in the JAR files.
-	 * @param globalClasspaths 
-	 *            The paths of directories and JAR files that are added to each user code 
-	 *            classloader on all nodes in the cluster. Note that the paths must specify a 
-	 *            protocol (e.g. file://) and be accessible on all nodes (e.g. by means of a NFS share).
-	 *            The protocol must be supported by the {@link java.net.URLClassLoader}.
-	 */
-	public RemoteStreamEnvironment(String host, int port, Configuration clientConfiguration, String[] jarFiles, URL[] globalClasspaths) {
-		super(GlobalConfiguration.loadConfiguration().getInteger(
-				ConfigConstants.DEFAULT_PARALLELISM_KEY,
-				ConfigConstants.DEFAULT_PARALLELISM));
-		
-		if (!ExecutionEnvironment.areExplicitEnvironmentsAllowed()) {
-			throw new InvalidProgramException(
-					"The RemoteEnvironment cannot be used when submitting a program through a client, " +
-							"or running in a TestEnvironment context.");
-		}
-		
-		if (host == null) {
-			throw new NullPointerException("Host must not be null.");
-		}
-		if (port < 1 || port >= 0xffff) {
-			throw new IllegalArgumentException("Port out of range");
-		}
+    /**
+     * Creates a new RemoteStreamEnvironment that points to the master
+     * (JobManager) described by the given host name and port.
+     *
+     * @param host     The host name or address of the master (JobManager), where the
+     *                 program should be executed.
+     * @param port     The port of the master (JobManager), where the program should
+     *                 be executed.
+     * @param jarFiles The JAR files with code that needs to be shipped to the
+     *                 cluster. If the program uses user-defined functions,
+     *                 user-defined input formats, or any libraries, those must be
+     *                 provided in the JAR files.
+     */
+    public RemoteStreamEnvironment(String host, int port, String... jarFiles) {
+        this(host, port, null, jarFiles);
+    }
 
-		this.host = host;
-		this.port = port;
-		this.clientConfiguration = clientConfiguration == null ? new Configuration() : clientConfiguration;
-		this.jarFiles = new ArrayList<>(jarFiles.length);
-		for (String jarFile : jarFiles) {
-			try {
-				URL jarFileUrl = new File(jarFile).getAbsoluteFile().toURI().toURL();
-				this.jarFiles.add(jarFileUrl);
-				JobWithJars.checkJarFile(jarFileUrl);
-			} catch (MalformedURLException e) {
-				throw new IllegalArgumentException("JAR file path is invalid '" + jarFile + "'", e);
-			} catch (IOException e) {
-				throw new RuntimeException("Problem with jar file " + jarFile, e);
-			}
-		}
-		if (globalClasspaths == null) {
-			this.globalClasspaths = Collections.emptyList();
-		}
-		else {
-			this.globalClasspaths = Arrays.asList(globalClasspaths);
-		}
-	}
+    /**
+     * Creates a new RemoteStreamEnvironment that points to the master
+     * (JobManager) described by the given host name and port.
+     *
+     * @param host                The host name or address of the master (JobManager), where the
+     *                            program should be executed.
+     * @param port                The port of the master (JobManager), where the program should
+     *                            be executed.
+     * @param clientConfiguration The configuration used to parametrize the client that connects to the
+     *                            remote cluster.
+     * @param jarFiles            The JAR files with code that needs to be shipped to the
+     *                            cluster. If the program uses user-defined functions,
+     *                            user-defined input formats, or any libraries, those must be
+     *                            provided in the JAR files.
+     */
+    public RemoteStreamEnvironment(String host, int port, Configuration clientConfiguration, String... jarFiles) {
+        this(host, port, clientConfiguration, jarFiles, null);
+    }
 
-	@Override
-	public JobExecutionResult execute(String jobName) throws ProgramInvocationException {
-		StreamGraph streamGraph = getStreamGraph();
-		streamGraph.setJobName(jobName);
-		transformations.clear();
-		return executeRemotely(streamGraph, jarFiles);
-	}
+    /**
+     * Creates a new RemoteStreamEnvironment that points to the master
+     * (JobManager) described by the given host name and port.
+     *
+     * @param host                The host name or address of the master (JobManager), where the
+     *                            program should be executed.
+     * @param port                The port of the master (JobManager), where the program should
+     *                            be executed.
+     * @param clientConfiguration The configuration used to parametrize the client that connects to the
+     *                            remote cluster.
+     * @param jarFiles            The JAR files with code that needs to be shipped to the
+     *                            cluster. If the program uses user-defined functions,
+     *                            user-defined input formats, or any libraries, those must be
+     *                            provided in the JAR files.
+     * @param globalClasspaths    The paths of directories and JAR files that are added to each user code
+     *                            classloader on all nodes in the cluster. Note that the paths must specify a
+     *                            protocol (e.g. file://) and be accessible on all nodes (e.g. by means of a NFS share).
+     *                            The protocol must be supported by the {@link java.net.URLClassLoader}.
+     */
+    public RemoteStreamEnvironment(String host, int port, Configuration clientConfiguration, String[] jarFiles, URL[] globalClasspaths) {
+        super(GlobalConfiguration.loadConfiguration().getInteger(ConfigConstants.DEFAULT_PARALLELISM_KEY, ConfigConstants.DEFAULT_PARALLELISM));
 
-	/**
-	 * Executes the remote job.
-	 * 
-	 * @param streamGraph
-	 *            Stream Graph to execute
-	 * @param jarFiles
-	 * 			  List of jar file URLs to ship to the cluster
-	 * @return The result of the job execution, containing elapsed time and accumulators.
-	 */
-	protected JobExecutionResult executeRemotely(StreamGraph streamGraph, List<URL> jarFiles) throws ProgramInvocationException {
-		if (LOG.isInfoEnabled()) {
-			LOG.info("Running remotely at {}:{}", host, port);
-		}
+        if (!ExecutionEnvironment.areExplicitEnvironmentsAllowed()) {
+            throw new InvalidProgramException("The RemoteEnvironment cannot be used when submitting a program through a client, " + "or running in a TestEnvironment context.");
+        }
 
-		ClassLoader usercodeClassLoader = JobWithJars.buildUserCodeClassLoader(jarFiles, globalClasspaths,
-			getClass().getClassLoader());
-		
-		Configuration configuration = new Configuration();
-		configuration.addAll(this.clientConfiguration);
-		
-		configuration.setString(ConfigConstants.JOB_MANAGER_IPC_ADDRESS_KEY, host);
-		configuration.setInteger(ConfigConstants.JOB_MANAGER_IPC_PORT_KEY, port);
+        if (host == null) {
+            throw new NullPointerException("Host must not be null.");
+        }
+        if (port < 1 || port >= 0xffff) {
+            throw new IllegalArgumentException("Port out of range");
+        }
 
-		ClusterClient client;
-		try {
-			client = new StandaloneClusterClient(configuration);
-			client.setPrintStatusDuringExecution(getConfig().isSysoutLoggingEnabled());
-		}
-		catch (Exception e) {
-			throw new ProgramInvocationException("Cannot establish connection to JobManager: " + e.getMessage(), e);
-		}
+        this.host = host;
+        this.port = port;
+        this.clientConfiguration = clientConfiguration == null ? new Configuration() : clientConfiguration;
+        this.jarFiles = new ArrayList<>(jarFiles.length);
+        for (String jarFile : jarFiles) {
+            try {
+                URL jarFileUrl = new File(jarFile).getAbsoluteFile().toURI().toURL();
+                this.jarFiles.add(jarFileUrl);
+                JobWithJars.checkJarFile(jarFileUrl);
+            } catch (MalformedURLException e) {
+                throw new IllegalArgumentException("JAR file path is invalid '" + jarFile + "'", e);
+            } catch (IOException e) {
+                throw new RuntimeException("Problem with jar file " + jarFile, e);
+            }
+        }
+        if (globalClasspaths == null) {
+            this.globalClasspaths = Collections.emptyList();
+        } else {
+            this.globalClasspaths = Arrays.asList(globalClasspaths);
+        }
+    }
 
-		try {
-			return client.run(streamGraph, jarFiles, globalClasspaths, usercodeClassLoader).getJobExecutionResult();
-		}
-		catch (ProgramInvocationException e) {
-			throw e;
-		}
-		catch (Exception e) {
-			String term = e.getMessage() == null ? "." : (": " + e.getMessage());
-			throw new ProgramInvocationException("The program execution failed" + term, e);
-		}
-		finally {
-			client.shutdown();
-		}
-	}
+    @Override
+    public JobExecutionResult execute(String jobName) throws ProgramInvocationException {
+        StreamGraph streamGraph = getStreamGraph();
+        streamGraph.setJobName(jobName);
+        transformations.clear();
+        return executeRemotely(streamGraph, jarFiles);
+    }
 
-	@Override
-	public String toString() {
-		return "Remote Environment (" + this.host + ":" + this.port + " - parallelism = "
-				+ (getParallelism() == -1 ? "default" : getParallelism()) + ")";
-	}
+    /**
+     * Executes the remote job.
+     *
+     * @param streamGraph Stream Graph to execute
+     * @param jarFiles    List of jar file URLs to ship to the cluster
+     * @return The result of the job execution, containing elapsed time and accumulators.
+     */
+    protected JobExecutionResult executeRemotely(StreamGraph streamGraph, List<URL> jarFiles) throws ProgramInvocationException {
+        if (LOG.isInfoEnabled()) {
+            LOG.info("Running remotely at {}:{}", host, port);
+        }
 
-	/**
-	 * Gets the hostname of the master (JobManager), where the
-	 * program will be executed.
-	 *
-	 * @return The hostname of the master
-	 */
-	public String getHost() {
-		return host;
-	}
+        ClassLoader usercodeClassLoader = JobWithJars.buildUserCodeClassLoader(jarFiles, globalClasspaths, getClass().getClassLoader());
 
-	/**
-	 * Gets the port of the master (JobManager), where the
-	 * program will be executed.
-	 *
-	 * @return The port of the master
-	 */
-	public int getPort() {
-		return port;
-	}
+        Configuration configuration = new Configuration();
+        configuration.addAll(this.clientConfiguration);
+
+        configuration.setString(ConfigConstants.JOB_MANAGER_IPC_ADDRESS_KEY, host);
+        configuration.setInteger(ConfigConstants.JOB_MANAGER_IPC_PORT_KEY, port);
+
+        ClusterClient client;
+        try {
+            client = new StandaloneClusterClient(configuration);
+            client.setPrintStatusDuringExecution(getConfig().isSysoutLoggingEnabled());
+        } catch (Exception e) {
+            throw new ProgramInvocationException("Cannot establish connection to JobManager: " + e.getMessage(), e);
+        }
+
+        try {
+            return client.run(streamGraph, jarFiles, globalClasspaths, usercodeClassLoader).getJobExecutionResult();
+        } catch (ProgramInvocationException e) {
+            throw e;
+        } catch (Exception e) {
+            String term = e.getMessage() == null ? "." : (": " + e.getMessage());
+            throw new ProgramInvocationException("The program execution failed" + term, e);
+        } finally {
+            client.shutdown();
+        }
+    }
+
+    @Override
+    public String toString() {
+        return "Remote Environment (" + this.host + ":" + this.port + " - parallelism = " + (getParallelism() == -1 ? "default" : getParallelism()) + ")";
+    }
+
+    /**
+     * Gets the hostname of the master (JobManager), where the
+     * program will be executed.
+     *
+     * @return The hostname of the master
+     */
+    public String getHost() {
+        return host;
+    }
+
+    /**
+     * Gets the port of the master (JobManager), where the
+     * program will be executed.
+     *
+     * @return The port of the master
+     */
+    public int getPort() {
+        return port;
+    }
 
 
-	public Configuration getClientConfiguration() {
-		return clientConfiguration;
-	}
+    public Configuration getClientConfiguration() {
+        return clientConfiguration;
+    }
 }
